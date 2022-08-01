@@ -31,7 +31,7 @@ public class Config {
         try {
             this.unsafeSave();
         } catch (IOException e) {
-            plugin.getLogger().severe("[Scripter] Unable to save config " + file.getName());
+            plugin.getLogger().severe("Unable to save config " + file.getName());
         }
     }
     
