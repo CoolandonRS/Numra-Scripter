@@ -19,9 +19,13 @@ permissions:
     description: allows using all scripter commands
     default: op
     children:
-      scripter.run:
-        description: allows running scripts with scripter
+      scripter.run.*:
+        description: allows running all scripts with scripter
         default: op
+        children:
+          scripter.run:
+            description: allows running of specifed scripts with scripter
+            default: op
       scripter.reload:
         description: allows reloading of scripter config
         default: op

@@ -20,41 +20,46 @@ public class ScripterCommand implements TabExecutor {
         if (args.length == 0) return false;
         switch (args[0]) {
             case "reload" -> {
+                if (!sender.hasPermission("scripter.reload")) return false;
                 if (args.length != 1) return false;
                 plugin.reloadConfigs();
                 sender.sendMessage(plugin.getName() + " Configs Reloaded!");
+                return true;
             }
             case "run" -> {
-                if (args.length != 2) return false;
-                if (plugin.isLooseDisabled()) {
-                    sender.sendMessage(plugin.getName() + " is disabled.");
-                    return true;
-                }
-                if (plugin.getScripts().containsKey(args[1])) {
-                    File file = plugin.getScripts().get(args[1]);
-                    if (!file.exists()) {
-                        sender.sendMessage("File not found");
+                if (!sender.hasPermission("scripter.run")) return false;
+                if (sender.hasPermission("scripter.run.*") || sender.hasPermission("sender.run." + args[1])) {
+                    if (args.length != 2) return false;
+                    if (plugin.isLooseDisabled()) {
+                        sender.sendMessage(plugin.getName() + " is disabled.");
                         return true;
                     }
-                    if (!file.canExecute()) {
-                        sender.sendMessage("File is not executable");
+                    if (plugin.getScripts().containsKey(args[1])) {
+                        File file = plugin.getScripts().get(args[1]);
+                        if (!file.exists()) {
+                            sender.sendMessage("File not found");
+                            return true;
+                        }
+                        if (!file.canExecute()) {
+                            sender.sendMessage("File is not executable");
+                        }
+                        try {
+                            Runtime.getRuntime().exec(file.getAbsolutePath());
+                            sender.sendMessage("Executing " + args[1]);
+                            plugin.getLogger().info(sender.getName() + " ran script " + args[1]);
+                        } catch (IOException e) {
+                            e.printStackTrace();
+                        }
+                    } else {
+                        sender.sendMessage("Unknown script");
                     }
-                    try {
-                        Runtime.getRuntime().exec(file.getAbsolutePath());
-                        sender.sendMessage("Executing " + args[1]);
-                        plugin.getLogger().info(sender.getName() + " ran script " + args[1]);
-                    } catch (IOException e) {
-                        e.printStackTrace();
-                    }
-                } else {
-                    sender.sendMessage("Unknown script");
-                }
+                    return true;
+                } else return false;
             }
             default -> {
                 return false;
             }
         }
-        return true;
     }
     
     @Override
@@ -62,14 +67,16 @@ public class ScripterCommand implements TabExecutor {
         switch (args.length) {
             case 1 -> {
                 ArrayList<String> tabList = new ArrayList<>();
-                if (sender.permissionValue("scripter.run").toBooleanOrElse(sender.isOp()) && !this.plugin.isLooseDisabled()) tabList.add("run");
-                if (sender.permissionValue("scripter.reload").toBooleanOrElse(sender.isOp()))  tabList.add("reload");
+                if (sender.hasPermission("scripter.run") && !this.plugin.isLooseDisabled()) tabList.add("run");
+                if (sender.hasPermission("scripter.reload")) tabList.add("reload");
                 
                 return StringUtil.copyPartialMatches(args[0], tabList, new ArrayList<>());
             }
             case 2 -> {
                 if (args[0].equals("run")) {
-                    if (sender.permissionValue("scripter.run").toBooleanOrElse(sender.isOp()) && !this.plugin.isLooseDisabled()) return plugin.getScripts().keySet().stream().toList();
+                    if (!sender.hasPermission("scripter.run")) return List.of();
+                    if (sender.hasPermission("scripter.run.*") && !this.plugin.isLooseDisabled()) return StringUtil.copyPartialMatches(args[1], plugin.getScripts().keySet().stream().toList(), new ArrayList<>());
+                    return StringUtil.copyPartialMatches(args[1], plugin.getScripts().keySet().stream().filter(script -> sender.hasPermission("scripter.run." + script)).toList(), new ArrayList<>());
                 }
             }
         }
