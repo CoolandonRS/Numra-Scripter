@@ -1,0 +1,27 @@
+name: Scripter
+version: '${version}'
+main: net.numra.scripter.Scripter
+api-version: 1.19
+prefix: Scripter
+author: CoolandonRS
+authors: [ ]
+description: Plugin for running scripts automatically on a timer or via minecraft commands
+commands:
+  scripter:
+    description: use scripter
+    aliases:
+      - sc
+    permission: scripter.scripter
+    usage: /scripter reload; /scripter run [script]
+
+permissions:
+  scripter.*:
+    description: allows using all scripter commands
+    default: op
+    children:
+      scripter.run:
+        description: allows running scripts with scripter
+        default: op
+      scripter.reload:
+        description: allows reloading of scripter config
+        default: op
