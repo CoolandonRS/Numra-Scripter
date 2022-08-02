@@ -33,7 +33,7 @@ public final class Scripter extends JavaPlugin {
         }
         
         if (!scheduleConfig.getFile().exists()) {
-            scheduleConfig.get().options().setHeader(List.of("For timed:"," - time: [time in seconds]","    command: [command to run]"));
+            scheduleConfig.get().options().setHeader(List.of("For timed:"," - time: [time in seconds]","   command: [command to run]"));
             ConfigurationSection scheduleSection = new MemoryConfiguration();
             scheduleSection.set("time", 86400);
             scheduleSection.set("command", "example");
@@ -41,7 +41,7 @@ public final class Scripter extends JavaPlugin {
             scheduleConfig.save();
         }
         
-        loadConfigVars();
+        reloadConfigs();
         
         ScripterCommand scripterCommand = new ScripterCommand(this);
         Objects.requireNonNull(this.getCommand("scripter")).setExecutor(scripterCommand);
@@ -67,6 +67,7 @@ public final class Scripter extends JavaPlugin {
         
         reloadConfig();
         scriptConfig.reload();
+        scheduleConfig.reload();
     
         mainConfig = this.getConfig();
     
@@ -90,13 +91,24 @@ public final class Scripter extends JavaPlugin {
         for (String key : scriptSection.getKeys(false)) {
             scripts.put(key, new File(scriptDir, Objects.requireNonNull(scriptSection.getString(key))));
         }
-        
         // schedules.yml
-        ConfigurationSection scheduleSection = scheduleConfig.get().getConfigurationSection("timed");
+        timedCommands.forEach(TimedCommand::cancel);
+        timedCommands.clear();
+        for (Map<?, ?> m : scheduleConfig.get().getMapList("timed")) {
+            @SuppressWarnings("unchecked")
+            Map<String, Object> map = (Map<String, Object>) m;
+            if (map.get("time") == null || map.get("command") == null) {
+                getLogger().warning("Invalid entry in schedules.yml");
+                continue;
+            }
+            timedCommands.add(new TimedCommand((String) map.get("command"), (Integer) map.get("time"), this));
+        }
+        timedCommands.forEach(TimedCommand::start);
     }
     
     @Override
     public void onDisable() {
+        timedCommands.forEach(TimedCommand::cancel);
         if (enabled) this.getLogger().info( ChatColor.RED + this.getName() + " disabled!");
     }
 }
