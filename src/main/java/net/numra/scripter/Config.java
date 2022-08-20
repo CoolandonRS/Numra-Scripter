@@ -1,10 +1,10 @@
 package net.numra.scripter;
 
-import org.bukkit.configuration.file.FileConfiguration;
-import org.bukkit.configuration.file.YamlConfiguration;
+import org.spongepowered.configurate.CommentedConfigurationNode;
+import org.spongepowered.configurate.ConfigurateException;
+import org.spongepowered.configurate.hocon.HoconConfigurationLoader;
 
 import java.io.File;
-import java.io.IOException;
 import java.util.List;
 import java.util.Map;
 
@@ -24,14 +24,27 @@ public class Config {
     );
     
     private final Scripter plugin;
-    private FileConfiguration config;
+    private ConfigInitializer initializer;
+    private CommentedConfigurationNode config;
+    private HoconConfigurationLoader loader;
     private final File file;
     
-    public void reload() {
-        config = YamlConfiguration.loadConfiguration(file);
+    public void unsafeReload() throws ConfigurateException {
+        config = loader.load();
     }
     
-    public FileConfiguration get() {
+    public boolean reload() {
+        try {
+            unsafeReload();
+            return true;
+        } catch (ConfigurateException e) {
+            e.printStackTrace();
+            plugin.getLogger().severe("Unable to reload config " + file.getName());
+            return false;
+        }
+    }
+    
+    public CommentedConfigurationNode get() {
         return config;
     }
     
@@ -39,15 +52,16 @@ public class Config {
         return file;
     }
     
-    public void unsafeSave() throws IOException {
-        config.save(file);
+    public void unsafeSave() throws ConfigurateException {
+        loader.save(config);
     }
     
     public boolean save() {
         try {
-            this.unsafeSave();
+            unsafeSave();
             return true;
-        } catch (IOException e) {
+        } catch (ConfigurateException e) {
+            e.printStackTrace();
             plugin.getLogger().severe("Unable to save config " + file.getName());
             return false;
         }
@@ -55,18 +69,31 @@ public class Config {
     
     public boolean delete() {
         boolean success = file.delete();
-        if (success) this.config = new YamlConfiguration();
+        if (success) reload();
         return success;
     }
     
-    public Config(String name, Scripter plugin) {
-        this.plugin = plugin;
-        this.file = new File(plugin.getDataFolder(), name + ".yml");
-        this.config = YamlConfiguration.loadConfiguration(file);
+    public boolean compatibleVersion(int version, ConfigType type) {
+        return compatibleVersions.get(type).get(version).contains(config.node("version").getInt(-1));
     }
     
-    public boolean compatibleVersion(Integer version, ConfigType type) {
-        if (!config.isSet("version")) return false;
-        return compatibleVersions.get(type).get(version).contains(config.getInt("version"));
+    public void verifyVersion(int version, ConfigType type) {
+        if (!compatibleVersion(version, type)) {
+            this.delete();
+            this.initializer.init(config);
+        }
+    }
+    
+    public Config(String name, Scripter plugin, ConfigInitializer initializer) {
+        this.plugin = plugin;
+        this.initializer = initializer;
+        this.file = new File(plugin.getDataFolder(), name + ".conf");
+        this.loader = HoconConfigurationLoader.builder().path(file.toPath()).build();
+        reload();
+        if (!file.exists()) {
+            initializer.init(config);
+            save();
+        }
+        reload();
     }
 }
