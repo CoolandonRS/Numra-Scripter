@@ -1,20 +1,47 @@
 package net.numra.scripter;
 
 import org.bukkit.ChatColor;
-import org.bukkit.configuration.ConfigurationSection;
-import org.bukkit.configuration.MemoryConfiguration;
 import org.bukkit.plugin.java.JavaPlugin;
+import org.spongepowered.configurate.CommentedConfigurationNode;
 
 import java.io.File;
 
 import java.util.*;
 
+import static java.util.Map.entry;
+
 public final class Scripter extends JavaPlugin {
-    public static final Map<ConfigType, Integer> configVersions = Map.of(ConfigType.Main, 1, ConfigType.Script, 1, ConfigType.Schedule, 1);
+    public static final Map<ConfigType, Integer> configVersions = Map.ofEntries(
+            entry(ConfigType.Main, 1),
+            entry(ConfigType.Script, 1),
+            entry(ConfigType.Schedule, 1)
+    );
+    private final Map<ConfigType, Config> configs = Map.ofEntries(
+            entry(ConfigType.Main, new Config("config", this, config -> {
+                config.node("enabled").raw(true);
+                config.node("scriptDir").raw(new File(this.getDataFolder(), "scripts").getAbsolutePath());
+                CommentedConfigurationNode versionNode = config.node("version");
+                versionNode.raw(configVersions.get(ConfigType.Main));
+                versionNode.comment("Don't change me!");
+            })),
+            entry(ConfigType.Script, new Config("scripts", this, config -> {
+                config.comment("[Script name]: [Script file]");
+                config.node("scripts").node("example").raw("example.bat");
+                CommentedConfigurationNode versionNode = config.node("version");
+                versionNode.raw(configVersions.get(ConfigType.Script));
+                versionNode.comment("Don't change me!");
+            })),
+            entry(ConfigType.Schedule, new Config("schedules", this, config -> {
+                config.comment("time: [time in seconds]\ncommand: [command to run]");
+                CommentedConfigurationNode listNode = config.node("timed").appendListNode();
+                listNode.node("time").raw(86400);
+                listNode.node("command").raw("example");
+                CommentedConfigurationNode versionNode = config.node("version");
+                versionNode.raw(configVersions.get(ConfigType.Schedule));
+                versionNode.comment("Don't change me!");
+            }))
+    );
     
-    private Config mainConfig = new Config("config", this);
-    private Config scriptConfig = new Config("scripts", this);
-    private Config scheduleConfig = new Config("schedules", this);
     private boolean enabled;
     private File scriptDir;
     private HashMap<String, File> scripts = new HashMap<>(Map.of());
@@ -22,17 +49,7 @@ public final class Scripter extends JavaPlugin {
     
     @Override
     public void onEnable() {
-        if (!mainConfig.getFile().exists()) {
-            generateMainConfig();
-        }
-    
-        if (!scriptConfig.getFile().exists()) {
-            generateScriptConfig();
-        }
-        
-        if (!scheduleConfig.getFile().exists()) {
-            generateScheduleConfig();
-        }
+        configs.forEach((type, config) -> config.verifyVersion(configVersions.get(type), type));
         
         reloadConfigs();
         
@@ -41,33 +58,6 @@ public final class Scripter extends JavaPlugin {
         Objects.requireNonNull(this.getCommand("scripter")).setTabCompleter(scripterCommand);
         
         if (enabled) this.getLogger().info(ChatColor.GREEN + this.getName() + " enabled!");
-    }
-    
-    private void generateMainConfig() {
-        mainConfig.get().set("enabled", true);
-        mainConfig.get().set("script_dir", new File(this.getDataFolder(), "scripts").getAbsolutePath());
-        mainConfig.get().set("version", configVersions.get(ConfigType.Main));
-        mainConfig.get().setComments("version", List.of("Don't change me!"));
-        mainConfig.save();
-    }
-    
-    private void generateScriptConfig() {
-        scriptConfig.get().options().setHeader(List.of("[Script name]: [Script file]"));
-        scriptConfig.get().createSection("scripts", Map.of("example", "example.bat"));
-        scriptConfig.get().set("version", configVersions.get(ConfigType.Script));
-        scriptConfig.get().setComments("version", List.of("Don't change me!"));
-        scriptConfig.save();
-    }
-    
-    private void generateScheduleConfig() {
-        scheduleConfig.get().options().setHeader(List.of("For timed:"," - time: [time in seconds]","   command: [command to run]"));
-        ConfigurationSection scheduleSection = new MemoryConfiguration();
-        scheduleSection.set("time", 86400);
-        scheduleSection.set("command", "example");
-        scheduleConfig.get().set("timed", List.of(scheduleSection));
-        scheduleConfig.get().set("version", configVersions.get(ConfigType.Schedule));
-        scheduleConfig.get().setComments("version", List.of("Don't change me!"));
-        scheduleConfig.save();
     }
     
     public HashMap<String, File> getScripts() {
@@ -85,63 +75,39 @@ public final class Scripter extends JavaPlugin {
     public void reloadConfigs() {
         this.getLogger().info("Reloading Config");
         
-        mainConfig.reload();
-        scriptConfig.reload();
-        scheduleConfig.reload();
-    
-        if (!mainConfig.compatibleVersion(configVersions.get(ConfigType.Main), ConfigType.Main)) {
-            mainConfig.delete();
-            generateMainConfig();
-            mainConfig.reload();
-            getLogger().warning("Main config reset");
-        }
-    
-        if (!scriptConfig.compatibleVersion(configVersions.get(ConfigType.Script), ConfigType.Script)) {
-            scriptConfig.delete();
-            generateScriptConfig();
-            scriptConfig.reload();
-            getLogger().warning("Script config reset");
-        }
-    
-        if (!scheduleConfig.compatibleVersion(configVersions.get(ConfigType.Schedule), ConfigType.Schedule)) {
-            scheduleConfig.delete();
-            generateScheduleConfig();
-            scheduleConfig.reload();
-            getLogger().warning("Schedule config reset");
-        }
+        configs.values().forEach(Config::reload);
     
         loadConfigVars();
     }
     
     private void loadConfigVars() {
         // config.yml
-        enabled = mainConfig.get().getBoolean("enabled");
+        CommentedConfigurationNode main = configs.get(ConfigType.Main).get();
+        enabled = main.node("enabled").getBoolean();
         if (!enabled) {
             this.getLogger().info(ChatColor.RED + this.getName() + " disabled by config.");
             return;
         }
-        scriptDir = new File(Objects.requireNonNull(mainConfig.get().getString("script_dir")));
+        scriptDir = new File(main.node("scriptDir").getString(new File(this.getDataFolder(), "scripts").getAbsolutePath()));
         if (!scriptDir.exists() && !scriptDir.mkdirs()) this.getLogger().severe("Script Dir Creation Failed");
         
         // scripts.yml
-        ConfigurationSection scriptSection = scriptConfig.get().getConfigurationSection("scripts");
+        CommentedConfigurationNode script = configs.get(ConfigType.Script).get();
         scripts.clear();
-        assert scriptSection != null;
-        for (String key : scriptSection.getKeys(false)) {
-            scripts.put(key, new File(scriptDir, Objects.requireNonNull(scriptSection.getString(key))));
-        }
+        script.node("scripts").childrenMap().forEach((key, node) -> scripts.put((String) key, new File(scriptDir, Objects.requireNonNull(node.getString()))));
         // schedules.yml
         timedCommands.forEach(TimedCommand::cancel);
         timedCommands.clear();
-        for (Map<?, ?> m : scheduleConfig.get().getMapList("timed")) {
-            @SuppressWarnings("unchecked")
-            Map<String, Object> map = (Map<String, Object>) m;
-            if (map.get("time") == null || map.get("command") == null) {
-                getLogger().warning("Invalid entry in schedules.yml");
-                continue;
+        CommentedConfigurationNode schedule = configs.get(ConfigType.Schedule).get();
+        schedule.node("timed").childrenList().forEach(node -> {
+            int time = node.node("time").getInt();
+            String commandStr = node.node("command").getString();
+            if (time <= 0 || commandStr == null) {
+                getLogger().warning("Invalid entry in schedule! Skipping.");
+            } else {
+                timedCommands.add(new TimedCommand(commandStr, time, this));
             }
-            timedCommands.add(new TimedCommand((String) map.get("command"), (Integer) map.get("time"), this));
-        }
+        });
         timedCommands.forEach(TimedCommand::start);
     }
     
